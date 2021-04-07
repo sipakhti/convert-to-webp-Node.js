@@ -1,0 +1,16 @@
+{
+  "name": "webp",
+  "version": "1.0.0",
+  "description": "converts a whole directory of images into webp while maintaining the folder structure",
+  "main": "main.js",
+  "dependencies": {
+    "@types/node": "^14.14.37",
+    "webp-converter": "^2.3.3"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "sipakhti",
+  "license": "ISC"
+}
