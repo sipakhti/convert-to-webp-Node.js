@@ -1,4 +1,4 @@
-const WEBP = require('webp-converter');
+const WEBP = require('webp-converter'); // webp convertor library
 const PATH = require('path');
 const fs = require('fs');
 const {
@@ -13,14 +13,23 @@ const process = require('process');
 
 WEBP.grant_permission();
 console.log(process.argv);
+// process.argv[2] is the first argument that is passed in the CLI batch command
 let source = process.argv[2];
+// source is parsed to extract the full path of the parent directory and appends the process.argv[3] (2nd CLI arg)
 let sink = source.substr(0, source.lastIndexOf('\\')) + '\\' + process.argv[3];
 let files = getFiles(source);
-create_dir(source, sink)
+create_dir(source, sink);
 convert(files, source, process.argv[3]);
 
+/**
+ * 
+ * @param {String} source 
+ * @param {Stirng} target 
+ * 
+ * xcopy /t /e /i source target 
+   xcopy (copy only folder structure) (copy empty directories as well) (tells the program that it is a directory)
+ */
 
-// xcopy /t /e /i source target
 function create_dir(source, target) {
     try {
         execSync(`xcopy /t /e /i "${source}" "${target}"`);
@@ -49,8 +58,15 @@ async function convert(files, sourceRootName, targetFolderRootName) {
 
 
         if (!(sourcePath.ext === '.jpg' || sourcePath.ext === '.png' || sourcePath.ext === '.tif' || sourcePath.ext === '.jpeg')) {
-            console.log("COPYING FILE: " + file);
-            execSync(`copy ${file} ${file.replace('\\' + sourceRootName.substr(sourceRootName.lastIndexOf('\\') + 1) + '\\', '\\' + targetFolderRootName + '\\')}`)
+            // console.log("COPYING FILE: " + file);
+            // exec(`copy "${file}" "${file.replace('\\' + sourceRootName.substr(sourceRootName.lastIndexOf('\\') + 1) + '\\', '\\' + targetFolderRootName + '\\')}"`,(error, stdout, stderr) => {
+            //     // console.log("COPYING COMPLETE: " + file);
+            //     if (error) console.error(error);
+            //     console.log(stdout);
+            //     console.timeStamp("SIPAKHTI");
+            //     console.log(stderr);
+            // });
+            // execSync(`copy ${file} ${file.replace('\\' + sourceRootName.substr(sourceRootName.lastIndexOf('\\') + 1) + '\\', '\\' + targetFolderRootName + '\\')}`)
             continue;
         }
         sourcePath.ext = '.webp';
@@ -105,16 +121,24 @@ async function convertBulkImage(imageData) {
     return;
 }
 
+/**
+ * 
+ * @param {String} dir full path of the parent direcory whose file contents need to be enumerated
+ * @param {any} files_ 
+ * @returns 
+ */
 function getFiles(dir, files_) {
+    // files_ is the array that holds the filepaths
+    // this array is passed recursively 
     files_ = files_ || [];
-    var files = fs.readdirSync(dir);
-    for (var i in files) {
-        var name = dir + '\\' + files[i];
-        if (fs.statSync(name).isDirectory()) {
-            getFiles(name, files_);
-        } else {
-            files_.push(name);
-        }
+    let files = fs.readdirSync(dir); // returns a list of all subdirectories and files as relative paths
+    for (let i in files) {
+        let name = dir + '\\' + files[i]; // construct an absolute path
+        if (fs.statSync(name).isDirectory()) // filter directory names from the list
+            getFiles(name, files_); // calls itself again to restart the sequence until the leaf direcotory is found
+        else
+            files_.push(name); // fairly obvious
+
     }
     return files_;
 }
