@@ -9,6 +9,8 @@ const {
     execSync
 } = require('child_process');
 const process = require('process');
+const { log, debug } = require('console');
+const { toASCII } = require('punycode');
 
 
 WEBP.grant_permission();
@@ -16,20 +18,27 @@ console.log(process.argv);
 // process.argv[2] is the first argument that is passed in the CLI batch command
 let source = process.argv[2];
 // source is parsed to extract the full path of the parent directory and appends the process.argv[3] (2nd CLI arg)
-let sink = source.substr(0, source.lastIndexOf('\\')) + '\\' + process.argv[3];
+let sink = source.substring(0, source.lastIndexOf('\\')) + '\\' + process.argv[3];
+let deleteSource = process.argv[4];
+console.log(deleteSource);
+
+console.info(`SOURCE DIRECTORY: ${source}`);
+console.info(`TARGET DIRECTORY: ${sink}`);
+
 let files = getFiles(source);
 create_dir(source, sink);
+
 convert(files, source, process.argv[3]);
 
+
+
+
 /**
- * 
  * @param {String} source 
  * @param {Stirng} target 
- * 
  * xcopy /t /e /i source target 
    xcopy (copy only folder structure) (copy empty directories as well) (tells the program that it is a directory)
  */
-
 function create_dir(source, target) {
     try {
         execSync(`xcopy /t /e /i "${source}" "${target}"`);
@@ -37,7 +46,8 @@ function create_dir(source, target) {
         console.log("XCOPY FAILED");
     }
 }
-async function convert(files, sourceRootName, targetFolderRootName) {
+
+async function convert(files, sourceRootDir, targetFolderRootDir) {
 
     let imageData = {
         source: [],
@@ -50,14 +60,38 @@ async function convert(files, sourceRootName, targetFolderRootName) {
 
     let imageCount = 0;
     let totalImages = files.length;
-    let nonImages = []
+    let nonImages = [];
+
+    let variants = {
+        icon: "512x512"
+    };
+    let TotalSizes = {
+        sourceDir: 0,
+        sinkDir: 0,
+
+        /**
+         * 
+         * @param {BigInt} src - size in BYTES
+         * @param {BigInt} sink - size in BYTES
+         */
+        updateSizes(src, sink) {
+            this.sourceDir += src/1000;
+            this.sinkDir += sink/1000;
+        },
+
+        compressionFactor() {
+            return this.sourceDir/this.sinkDir;
+        }
+    };
+
     for (const file of files) {
         imageCount++;
         let sourcePath = PATH.parse(file);
-        let targetPath = sourcePath.dir + '\\' + sourcePath.name + '.webp'
+        let targetPath = `${sourcePath.dir}\\${sourcePath.name}.webp`;
 
 
-        if (!(sourcePath.ext === '.jpg' || sourcePath.ext === '.png' || sourcePath.ext === '.tif' || sourcePath.ext === '.jpeg')) {
+        // skip files types other than JPEG PNG and TIF
+        if (!(sourcePath.ext === '.jpg' || sourcePath.ext === '.png' || sourcePath.ext === '.tif' || sourcePath.ext === '.jpeg' || sourcePath.ext === '.heic')) {
             // console.log("COPYING FILE: " + file);
             // exec(`copy "${file}" "${file.replace('\\' + sourceRootName.substr(sourceRootName.lastIndexOf('\\') + 1) + '\\', '\\' + targetFolderRootName + '\\')}"`,(error, stdout, stderr) => {
             //     // console.log("COPYING COMPLETE: " + file);
@@ -68,10 +102,10 @@ async function convert(files, sourceRootName, targetFolderRootName) {
             // });
             // execSync(`copy ${file} ${file.replace('\\' + sourceRootName.substr(sourceRootName.lastIndexOf('\\') + 1) + '\\', '\\' + targetFolderRootName + '\\')}`)
             continue;
-        }
+        };
         sourcePath.ext = '.webp';
-        targetPath = sourcePath.dir + '\\' + sourcePath.name + '.webp'
-        targetPath = targetPath.replace('\\' + sourceRootName.substr(sourceRootName.lastIndexOf('\\') + 1) + '\\', '\\' + targetFolderRootName + '\\');
+        targetPath = `${sourcePath.dir}\\${sourcePath.name}.webp`;
+        targetPath = targetPath.replace(`\\${sourceRootDir.substr(sourceRootDir.lastIndexOf('\\') + 1)}\\`, `\\${targetFolderRootDir}\\`);
         if (fs.existsSync(targetPath)) {
             console.log(`Skipping file: ${file}`);
             console.error('file already exists');
@@ -80,7 +114,7 @@ async function convert(files, sourceRootName, targetFolderRootName) {
         // console.log(targetPath.replace(source.substr(source.lastIndexOf('\\') + 1), target));
         // imageData.source.push(PATH.format(sourcePath));
         // imageData.target.push(targetPath);
-        let size = fs.statSync(PATH.format(sourcePath)).size;
+        let inputFileSize = fs.statSync(PATH.format(sourcePath)).size;
         // console.log(size);
         // if (imageData.source.length >= 2){
         //     await bulkConvert(imageData)
@@ -89,12 +123,29 @@ async function convert(files, sourceRootName, targetFolderRootName) {
         // if (size > 30000) continue;
         console.log(`Converting Image ${imageCount} of ${totalImages}`);
         await WEBP.cwebp(file, targetPath, '-q 75 -pass 10 -f 100 -sns 100 -mt -m 6 -alpha_q 50', '-v')
-            .then(response => console.log(response.replace('File:', `Input Size: ${size} bytes\nFiles:`)))
+            .then(response => {
+                console.log(response.replace('File:', `Input Size: ${inputFileSize} bytes\n:`));
+                let outputFileSize = fs.statSync(targetPath).size;
+                console.info(`Comppression Factor: ${inputFileSize/outputFileSize}`);
+                TotalSizes.updateSizes(inputFileSize, outputFileSize);
+            })
+
+            if (deleteSource !== undefined) {
+                exec(`del "${file}"`, (err, stdout) => {
+                    console.error(err);
+                });
+            }
+
 
     }
     '-q 75 -pass 10 -f 100 -sns 100 -mt -m 6 -alpha_q 50'
     "-lossless -z 9 -m 6 -mt"
     '-q 75 -pass 10 -f 100 -sns 100 -resize 600 900 -mt -m 6 -alpha_q 50'
+
+    console.debug(`TOTAL COMPRESSION FACTOR: ${TotalSizes.compressionFactor()}\n
+                    SOURCE SIZE: ${TotalSizes.sourceDir}\n
+                    SINK SIZE: ${TotalSizes.sinkDir}`);
+
 
 }
 

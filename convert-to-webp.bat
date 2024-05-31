@@ -1,4 +1,5 @@
 @echo OFF
 set source=%1
 set sink=%2
-node "F:\WORK\WebP\main.js" %source% %sink%
+set overwriteSource=%3
+node "C:\Users\omers\Desktop\Programming\Image optimizer\convert-to-webp-Node.js\main.js" %source% %sink% %overwriteSource%
