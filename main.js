@@ -19,14 +19,14 @@ console.log(process.argv);
 let source = process.argv[2];
 // source is parsed to extract the full path of the parent directory and appends the process.argv[3] (2nd CLI arg)
 let sink = source.substring(0, source.lastIndexOf('\\')) + '\\' + process.argv[3];
-let deleteSource = process.argv[4];
-console.log(deleteSource);
+let overWriteSource = process.argv[4];
+console.log(overWriteSource);
 
 console.info(`SOURCE DIRECTORY: ${source}`);
 console.info(`TARGET DIRECTORY: ${sink}`);
 
 let files = getFiles(source);
-create_dir(source, sink);
+if (overWriteSource === undefined) create_dir(source, sink);
 
 convert(files, source, process.argv[3]);
 
@@ -88,6 +88,7 @@ async function convert(files, sourceRootDir, targetFolderRootDir) {
         imageCount++;
         let sourcePath = PATH.parse(file);
         let targetPath = `${sourcePath.dir}\\${sourcePath.name}.webp`;
+    
 
 
         // skip files types other than JPEG PNG and TIF
@@ -103,38 +104,43 @@ async function convert(files, sourceRootDir, targetFolderRootDir) {
             // execSync(`copy ${file} ${file.replace('\\' + sourceRootName.substr(sourceRootName.lastIndexOf('\\') + 1) + '\\', '\\' + targetFolderRootName + '\\')}`)
             continue;
         };
+
+
         sourcePath.ext = '.webp';
         targetPath = `${sourcePath.dir}\\${sourcePath.name}.webp`;
+
+
         targetPath = targetPath.replace(`\\${sourceRootDir.substr(sourceRootDir.lastIndexOf('\\') + 1)}\\`, `\\${targetFolderRootDir}\\`);
         if (fs.existsSync(targetPath)) {
             console.log(`Skipping file: ${file}`);
             console.error('file already exists');
             continue;
         }
+        let inputFileSize = fs.statSync(PATH.format(sourcePath)).size;
+
+        if (overWriteSource !== undefined) {
+            sourcePath.base = sourcePath.base.split(".")[0] + ".webp"
+            log(PATH.format(sourcePath))
+            fs.renameSync(file,PATH.format(sourcePath));
+            await convertActualImage(imageCount, totalImages, PATH.format(sourcePath), PATH.format(sourcePath), inputFileSize, TotalSizes);
+
+        }
+        else {
+            await convertActualImage(imageCount, totalImages, file, targetPath, inputFileSize, TotalSizes);
+            log(sourcePath, file)
+
+
+        }
         // console.log(targetPath.replace(source.substr(source.lastIndexOf('\\') + 1), target));
         // imageData.source.push(PATH.format(sourcePath));
         // imageData.target.push(targetPath);
-        let inputFileSize = fs.statSync(PATH.format(sourcePath)).size;
         // console.log(size);
         // if (imageData.source.length >= 2){
         //     await bulkConvert(imageData)
         //     imageData.purge();
         // }
         // if (size > 30000) continue;
-        console.log(`Converting Image ${imageCount} of ${totalImages}`);
-        await WEBP.cwebp(file, targetPath, '-q 75 -pass 10 -f 100 -sns 100 -mt -m 6 -alpha_q 50', '-v')
-            .then(response => {
-                console.log(response.replace('File:', `Input Size: ${inputFileSize} bytes\n:`));
-                let outputFileSize = fs.statSync(targetPath).size;
-                console.info(`Comppression Factor: ${inputFileSize/outputFileSize}`);
-                TotalSizes.updateSizes(inputFileSize, outputFileSize);
-            })
 
-            if (deleteSource !== undefined) {
-                exec(`del "${file}"`, (err, stdout) => {
-                    console.error(err);
-                });
-            }
 
 
     }
@@ -147,6 +153,17 @@ async function convert(files, sourceRootDir, targetFolderRootDir) {
                     SINK SIZE: ${TotalSizes.sinkDir}`);
 
 
+}
+
+async function convertActualImage(imageCount, totalImages, file, targetPath, inputFileSize, TotalSizes) {
+    console.log(`Converting Image ${imageCount} of ${totalImages}`);
+    await WEBP.cwebp(file, targetPath, '-q 75 -pass 10 -f 100 -sns 100 -mt -m 6 -alpha_q 50', '-v')
+        .then(response => {
+            console.log(response.replace('File:', `Input Size: ${inputFileSize} bytes\n:`));
+            let outputFileSize = fs.statSync(targetPath).size;
+            console.info(`Comppression Factor: ${inputFileSize / outputFileSize}`);
+            TotalSizes.updateSizes(inputFileSize, outputFileSize);
+        });
 }
 
 async function bulkConvert(imageData) {
