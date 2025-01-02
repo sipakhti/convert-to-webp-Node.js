@@ -1,17 +1,13 @@
 const WEBP = require('webp-converter'); // webp convertor library
 const PATH = require('path');
 const fs = require('fs');
-const {
-    exec
-} = require('child_process');
 const EventEmitter = require('events');
 const {
     execSync
 } = require('child_process');
 const process = require('process');
 const { log, debug } = require('console');
-const { toASCII } = require('punycode');
-
+const os = require('os')
 
 WEBP.grant_permission();
 console.log(process.argv);
@@ -49,22 +45,10 @@ function create_dir(source, target) {
 
 async function convert(files, sourceRootDir, targetFolderRootDir) {
 
-    let imageData = {
-        source: [],
-        target: [],
-        purge() {
-            this.source = [];
-            this.target = [];
-        }
-    }
-
     let imageCount = 0;
     let totalImages = files.length;
-    let nonImages = [];
 
-    let variants = {
-        icon: "512x512"
-    };
+
     let TotalSizes = {
         sourceDir: 0,
         sinkDir: 0,
@@ -84,65 +68,62 @@ async function convert(files, sourceRootDir, targetFolderRootDir) {
         }
     };
 
-    for (const file of files) {
-        imageCount++;
-        let sourcePath = PATH.parse(file);
-        let targetPath = `${sourcePath.dir}\\${sourcePath.name}.webp`;
+    async function processBatch(batch) {
+        let promises = []
+        for (const file of batch) {
+            let sourcePath = PATH.parse(file);
+            let targetPath = `${sourcePath.dir}\\${sourcePath.name}.webp`;
+        
+            // skip files types other than images
+            if (!(sourcePath.ext.toLowerCase() === '.jpg' || sourcePath.ext.toLowerCase() === '.png' || sourcePath.ext.toLowerCase() === '.tif' || sourcePath.ext.toLowerCase() === '.jpeg' || sourcePath.ext.toLowerCase() === '.heic')) {
+                continue;
+            };
     
+            sourcePath.ext = '.webp';
+            targetPath = `${sourcePath.dir}\\${sourcePath.name}.webp`;
+    
+            targetPath = targetPath.replace(`\\${sourceRootDir.substr(sourceRootDir.lastIndexOf('\\') + 1)}\\`, `\\${targetFolderRootDir}\\`);
+            if (fs.existsSync(targetPath)) {
+                console.log(`Skipping file: ${file}`);
+                console.error('file already exists');
+                continue;
+            }
+
+            imageCount++;
+            let inputFileSize = fs.statSync(PATH.format(sourcePath)).size;
+    
+            if (overWriteSource !== undefined) {
+                sourcePath.base = sourcePath.base.split(".")[0] + ".webp"
+                log(PATH.format(sourcePath))
+                fs.renameSync(file,PATH.format(sourcePath));
+                promises.push(convertActualImage(imageCount, totalImages, PATH.format(sourcePath), PATH.format(sourcePath), inputFileSize, TotalSizes));
+    
+            }
+            else {
+                promises.push(convertActualImage(imageCount, totalImages, file, targetPath, inputFileSize, TotalSizes));
+                log(sourcePath, file)
+    
+    
+            }
+    
+    }
+        await Promise.all(promises)
 
 
-        // skip files types other than JPEG PNG and TIF
-        if (!(sourcePath.ext === '.jpg' || sourcePath.ext === '.png' || sourcePath.ext === '.tif' || sourcePath.ext === '.jpeg' || sourcePath.ext === '.heic')) {
-            // console.log("COPYING FILE: " + file);
-            // exec(`copy "${file}" "${file.replace('\\' + sourceRootName.substr(sourceRootName.lastIndexOf('\\') + 1) + '\\', '\\' + targetFolderRootName + '\\')}"`,(error, stdout, stderr) => {
-            //     // console.log("COPYING COMPLETE: " + file);
-            //     if (error) console.error(error);
-            //     console.log(stdout);
-            //     console.timeStamp("SIPAKHTI");
-            //     console.log(stderr);
-            // });
-            // execSync(`copy ${file} ${file.replace('\\' + sourceRootName.substr(sourceRootName.lastIndexOf('\\') + 1) + '\\', '\\' + targetFolderRootName + '\\')}`)
-            continue;
-        };
+    }
 
+    
+    const BATCH_SIZE = os.cpus().length - 2
 
-        sourcePath.ext = '.webp';
-        targetPath = `${sourcePath.dir}\\${sourcePath.name}.webp`;
+    let batchIndex = 0;
+    while (batchIndex * BATCH_SIZE < files.length) {
+        const start = batchIndex * BATCH_SIZE;
+        const end = start + BATCH_SIZE;
+        const batch = files.slice(start, end);
 
-
-        targetPath = targetPath.replace(`\\${sourceRootDir.substr(sourceRootDir.lastIndexOf('\\') + 1)}\\`, `\\${targetFolderRootDir}\\`);
-        if (fs.existsSync(targetPath)) {
-            console.log(`Skipping file: ${file}`);
-            console.error('file already exists');
-            continue;
-        }
-        let inputFileSize = fs.statSync(PATH.format(sourcePath)).size;
-
-        if (overWriteSource !== undefined) {
-            sourcePath.base = sourcePath.base.split(".")[0] + ".webp"
-            log(PATH.format(sourcePath))
-            fs.renameSync(file,PATH.format(sourcePath));
-            await convertActualImage(imageCount, totalImages, PATH.format(sourcePath), PATH.format(sourcePath), inputFileSize, TotalSizes);
-
-        }
-        else {
-            await convertActualImage(imageCount, totalImages, file, targetPath, inputFileSize, TotalSizes);
-            log(sourcePath, file)
-
-
-        }
-        // console.log(targetPath.replace(source.substr(source.lastIndexOf('\\') + 1), target));
-        // imageData.source.push(PATH.format(sourcePath));
-        // imageData.target.push(targetPath);
-        // console.log(size);
-        // if (imageData.source.length >= 2){
-        //     await bulkConvert(imageData)
-        //     imageData.purge();
-        // }
-        // if (size > 30000) continue;
-
-
-
+        console.log(`Processing batch ${batchIndex + 1}/${Math.ceil(files.length / BATCH_SIZE)}...`);
+        await processBatch(batch); // Process the current batch
+        batchIndex++;
     }
     '-q 75 -pass 10 -f 100 -sns 100 -mt -m 6 -alpha_q 50'
     "-lossless -z 9 -m 6 -mt"
@@ -157,7 +138,7 @@ async function convert(files, sourceRootDir, targetFolderRootDir) {
 
 async function convertActualImage(imageCount, totalImages, file, targetPath, inputFileSize, TotalSizes) {
     console.log(`Converting Image ${imageCount} of ${totalImages}`);
-    await WEBP.cwebp(file, targetPath, '-q 75 -pass 10 -f 100 -sns 100 -mt -m 6 -alpha_q 50', '-v')
+    WEBP.cwebp(file, targetPath, '-q 75 -pass 10 -f 100 -sns 100 -mt -m 6 -alpha_q 50', '-v')
         .then(response => {
             console.log(response.replace('File:', `Input Size: ${inputFileSize} bytes\n:`));
             let outputFileSize = fs.statSync(targetPath).size;
@@ -166,28 +147,7 @@ async function convertActualImage(imageCount, totalImages, file, targetPath, inp
         });
 }
 
-async function bulkConvert(imageData) {
-    let iterations = imageData.source.length;
 
-    for (let index = 0; index < iterations; index++) {
-        let size = fs.statSync(imageData.source[index]).size;
-        WEBP.cwebp(imageData.source[index], imageData.target[index], '-q 75 -pass 6 -sns 100 -mt -m 6', '-v')
-            .then(response => console.log(response.replace('File:', `Input Size: ${size} bytes\nFiles:`)))
-    }
-
-
-}
-async function convertBulkImage(imageData) {
-
-    let iterations = imageData.source.length;
-    let commands = [];
-
-    for (let index = 0; index < iterations; index++)
-        commands.push(`F:\\WORK\\WebP\\webp\\bin\\cwebp.exe -q 75 -pass 6 -sns 100 -mt -m 6 -alpha_q 50 "${imageData.source[index]}" -o "${imageData.target[index]}" -v`)
-    // WEBP.cwebp()
-    console.log(execSync(commands.join('&&')));
-    return;
-}
 
 /**
  * 
